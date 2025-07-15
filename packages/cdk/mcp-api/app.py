@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List
 from uuid import uuid4
+from routers import streaming
 
 UV_ENV = {
     "UV_NO_CACHE": "1",
@@ -127,7 +128,7 @@ def upload_file_to_s3_and_retrieve_s3_url(filepath: str) -> str:
 app = FastAPI()
 
 # Shared MCP clients
-app.mcp_tools = None
+app.state.mcp_tools = None
 
 
 @app.get("/")
@@ -209,68 +210,10 @@ def load_mcp_tools():
     # Flatten the tools
     mcp_tools = sum([c.list_tools_sync() for c in mcp_clients], [])
 
-    app.mcp_tools = mcp_tools
+    app.state.mcp_tools = mcp_tools
 
 
-@app.post("/streaming")
-async def streaming(request: StreamingRequest):
-    if app.mcp_tools is None:
-        load_mcp_tools()
-
-    async def generate():
-        global session_id
-
-        session_id = create_session_id()
-
-        logging.info(f"New session {session_id}")
-
-        create_ws_directory()
-
-        session = boto3.Session(
-            region_name=request.model.region,
-        )
-
-        bedrock_model = BedrockModel(
-            model_id=request.model.modelId, boto_session=session
-        )
-
-        agent = Agent(
-            system_prompt=f"{request.systemPrompt}\n{FIXED_SYSTEM_PROMPT}",
-            messages=convert_unrecorded_message_to_strands_messages(request.messages),
-            model=bedrock_model,
-            tools=app.mcp_tools + [upload_file_to_s3_and_retrieve_s3_url],
-            callback_handler=None,
-        )
-
-        async for event in agent.stream_async(request.userPrompt):
-            if is_message(event):
-                if is_assistant(event):
-                    text = extract_text(event)
-                    tool_use = extract_tool_use(event)
-
-                    if text is not None and tool_use is not None:
-                        yield stream_chunk("", f"{text}\n")
-                        yield stream_chunk(
-                            "", f"```\n{tool_use['name']}: {tool_use['input']}\n```\n"
-                        )
-                    elif text is not None:
-                        yield stream_chunk(text, None)
-                    else:
-                        yield stream_chunk(
-                            "", f"```\n{tool_use['name']}: {tool_use['input']}\n```\n"
-                        )
-                else:
-                    tool_result = extract_tool_result(event)
-                    if len(tool_result) > 200:
-                        tool_result = tool_result[:200] + "..."
-                    yield stream_chunk("", f"```\n{tool_result}\n```\n")
-
-        clean_ws_directory()
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-    )
+app.include_router(streaming.router)
 
 
 if __name__ == "__main__":
