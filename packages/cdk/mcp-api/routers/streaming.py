@@ -1,3 +1,8 @@
+"""ストリーミングAPIルーター
+
+LLMのストリーミングレスポンスを処理するエンドポイントを定義するモジュール。
+"""
+
 import logging
 
 import boto3
@@ -24,14 +29,33 @@ from mcp_manager import load_mcp_tools
 from tools import upload_file_to_s3_and_retrieve_s3_url, set_session_id
 
 router = APIRouter()
+"""ストリーミング用のAPIルーターインスタンス。"""
 
 
 @router.post("/streaming")
 async def streaming(request: StreamingRequest, req: Request):
+    """ストリーミングエンドポイント。
+
+    LLMにプロンプトを送信し、ストリーミング形式でレスポンスを返す。
+
+    Args:
+        request: ストリーミングリクエストのデータ
+        req: FastAPIのリクエストオブジェクト
+
+    Returns:
+        StreamingResponse: Server-Sent Events形式のストリーミングレスポンス
+    """
     if req.app.state.mcp_tools is None:
         load_mcp_tools()
 
     async def generate():
+        """ストリーミングレスポンスを生成する非同期ジェネレータ関数。
+
+        LLMからのレスポンスをリアルタイムで処理し、クライアントにストリーミングする。
+
+        Yields:
+            str: JSON形式のストリーミングチャンク
+        """
         session_id = create_session_id()
         set_session_id(session_id)
 
@@ -50,7 +74,9 @@ async def streaming(request: StreamingRequest, req: Request):
         try:
             agent = Agent(
                 system_prompt=f"{request.systemPrompt}\n{FIXED_SYSTEM_PROMPT}",
-                messages=convert_unrecorded_message_to_strands_messages(request.messages),
+                messages=convert_unrecorded_message_to_strands_messages(
+                    request.messages
+                ),
                 model=bedrock_model,
                 tools=req.app.state.mcp_tools + [upload_file_to_s3_and_retrieve_s3_url],
                 callback_handler=None,
@@ -70,13 +96,15 @@ async def streaming(request: StreamingRequest, req: Request):
                         if text is not None and tool_use is not None:
                             yield stream_chunk("", f"{text}\n")
                             yield stream_chunk(
-                                "", f"```\n{tool_use['name']}: {tool_use['input']}\n```\n"
+                                "",
+                                f"```\n{tool_use['name']}: {tool_use['input']}\n```\n",
                             )
                         elif text is not None:
                             yield stream_chunk(text, None)
                         else:
                             yield stream_chunk(
-                                "", f"```\n{tool_use['name']}: {tool_use['input']}\n```\n"
+                                "",
+                                f"```\n{tool_use['name']}: {tool_use['input']}\n```\n",
                             )
                     else:
                         tool_result = extract_tool_result(event)

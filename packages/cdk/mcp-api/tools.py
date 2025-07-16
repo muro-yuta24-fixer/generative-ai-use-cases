@@ -1,3 +1,7 @@
+"""ツールモジュール
+
+LLMが使用できるカスタムツールを定義するモジュール。
+"""
 import os
 import boto3
 from strands import tool
@@ -6,6 +10,7 @@ from config import FILE_BUCKET, AWS_REGION, WORKSPACE_DIR
 
 
 session_id = None
+"""現在のセッションIDを保持するグローバル変数。"""
 
 
 @tool
@@ -35,6 +40,13 @@ def upload_file_to_s3_and_retrieve_s3_url(filepath: str) -> str:
 
 
 def set_session_id(new_session_id: str) -> None:
+    """セッションIDを設定する。
+    
+    グローバル変数session_idに新しいセッションIDを設定する。
+    
+    Args:
+        new_session_id: 新しいセッションID
+    """
     global session_id
     session_id = new_session_id
 
