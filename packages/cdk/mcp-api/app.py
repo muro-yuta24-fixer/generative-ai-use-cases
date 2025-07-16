@@ -7,7 +7,7 @@ import uvicorn
 import logging
 from fastapi import FastAPI, Response, status
 
-from routers import streaming
+from routers import mcp_server_controller, streaming
 from mcp_manager import load_mcp_tools
 
 app = FastAPI()
@@ -31,6 +31,7 @@ async def healthcheck():
 
 
 app.include_router(streaming.router)
+app.include_router(mcp_server_controller.router)
 
 
 if __name__ == "__main__":
